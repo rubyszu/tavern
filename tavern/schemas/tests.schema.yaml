@@ -25,6 +25,47 @@ schema;any_map_or_list_with_ext_function:
   type: any
   required: false
 
+schema;response:
+  type: map
+  required: false
+  mapping:
+    strict:
+      func: check_strict_key
+      type: any
+
+    status_code:
+      type: any
+      func: validate_status_code_is_int_or_list_of_ints
+
+    cookies:
+      type: seq
+      required: false
+      sequence:
+        - type: str
+          unique: true
+
+    re;(headers|redirect_query_params):
+      include: any_map_with_ext_function
+
+    body:
+      include: any_map_or_list_with_ext_function
+
+    save:
+      include: any_map_with_ext_function
+      mapping:
+        re;(\$ext|body|headers|redirect_query_params):
+          type: any
+
+    validate:
+      type: seq
+      required: false
+      sequence:
+        - type: map
+          required: false
+          mapping:
+            re;(.*):
+              type: any
+
 schema;stage:
   type: map
   required: true
@@ -34,7 +75,7 @@ schema;stage:
       required: false
     name:
       type: str
-      required: true
+      required: false
       unique: true
     max_retries:
       type: int
@@ -167,33 +208,7 @@ schema;stage:
     response:
       type: map
       required: false
-      mapping:
-        strict:
-          func: check_strict_key
-          type: any
-
-        status_code:
-          type: any
-          func: validate_status_code_is_int_or_list_of_ints
-
-        cookies:
-          type: seq
-          required: false
-          sequence:
-            - type: str
-              unique: true
-
-        re;(headers|redirect_query_params):
-          include: any_map_with_ext_function
-
-        body:
-          include: any_map_or_list_with_ext_function
-
-        save:
-          include: any_map_with_ext_function
-          mapping:
-            re;(\$ext|body|headers|redirect_query_params):
-              type: any
+      include: response
 
 schema;stage_ref:
   type: map
@@ -206,6 +221,48 @@ schema;stage_ref:
     id:
       required: true
       type: str
+    response:
+      type: map
+      required: false
+      include: response
+
+schema;stage_includes:
+  type: seq
+  required: false
+  sequence:
+    - type: map
+      required: false
+      mapping:
+        includes:
+          type: seq
+          required: false
+          include: stage_includes
+
+        test_name:
+          required: false
+          type: str
+
+        name:
+          required: false
+          type: str
+
+        description:
+          required: false
+          type: str
+
+        variables:
+          type: map
+          required: false
+          mapping:
+            re;(.*):
+              type: any
+
+        stages:
+          type: seq
+          required: false
+          sequence:
+            - include: stage
+
 
 type: map
 mapping:
@@ -266,32 +323,9 @@ mapping:
     type: any
 
   includes:
+    include: stage_includes
     required: false
     type: seq
-    sequence:
-      - type: map
-        required: false
-        mapping:
-          name:
-            required: true
-            type: str
-
-          description:
-            required: true
-            type: str
-
-          variables:
-            type: map
-            required: false
-            mapping:
-              re;(.*):
-                type: any
-
-          stages:
-            type: seq
-            required: false
-            sequence:
-              - include: stage
 
   stages:
     type: seq
