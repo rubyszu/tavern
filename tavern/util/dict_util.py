@@ -13,6 +13,91 @@ from . import exceptions
 logger = logging.getLogger(__name__)
 
 
+def resolve_value(key, to_check):
+    """
+    Args:
+        key: str  data.a
+        to_check: dict  {"data": { "a": "b"}}
+
+    Return value   "b"
+    """
+    if not to_check or "." not in key:
+        return key
+
+    split_key = key.split(".")
+    return recurse_access_key(to_check, split_key)
+
+def isformat(string, **to_check):
+
+    flag = False
+    split_list = string.split(".")
+    if "." in string and split_list[0] in to_check:
+        flag = True
+
+    return flag
+
+def assign_value(expected, **to_check):
+    """Save a value in the response for use in future tests
+
+    Args:
+        expected (dict or list): expected saved dict
+        to_check (dict): An element of the response from which the given key
+            is extracted
+        
+
+    Returns:
+        dict: dictionary of save_name: value, where save_name is the key we
+            wanted to save this value as
+    """
+    if not to_check:
+        return None;
+
+    expected_type = type(expected)
+
+    #dict
+    if isinstance(expected, dict):
+        saved = {}
+        for save_as, joined_key in expected.items():
+            #处理赋值的情况
+            if isinstance(joined_key, str) and isformat(joined_key, **to_check):
+                split_key = joined_key.split(".")
+                saved[save_as] = recurse_access_key(to_check, split_key)
+            #dict
+            elif isinstance(joined_key, dict):
+                saved[save_as] = assign_value(joined_key, **to_check)
+
+                #处理注入函数的情况
+                if joined_key.has_key("$ext"):
+                    ext = assign_value(joined_key["$ext"], **to_check)
+                    saved[save_as] = get_wrapped_create_function(ext)
+
+            #list in dict
+            elif isinstance(joined_key, list):
+                saved[save_as] = assign_value(joined_key, **to_check)
+
+            expected.update(saved) 
+            
+    #list
+    if isinstance(expected, list):
+        for i in range(len(expected)):
+
+            if isinstance(expected[i], str) and isformat(expected[i], **to_check):
+                split_key = expected[i].split(".")
+                expected[i] = recurse_access_key(to_check, split_key)
+
+            elif isinstance(expected[i], dict):
+                expected[i] = assign_value(expected[i],**to_check)
+
+                #处理注入函数的情况
+                if expected[i].has_key("$ext"):
+                    ext = assign_value(expected[i]["$ext"], **to_check)
+                    expected[i] = get_wrapped_create_function(ext)
+
+
+        return expected
+
+    return expected
+
 def format_keys(val, variables):
     """recursively format a dictionary with the given values
 
