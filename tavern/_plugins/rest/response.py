@@ -2,6 +2,7 @@ import json
 import traceback
 import logging
 import copy
+import inspect
 
 try:
     from urllib.parse import urlparse, parse_qs
@@ -11,11 +12,16 @@ except ImportError:
 from requests.status_codes import _codes
 
 from tavern.schemas.extensions import get_wrapped_response_function
-from tavern.util.dict_util import recurse_access_key, deep_dict_merge
+from tavern.util.dict_util import recurse_access_key, deep_dict_merge, assign_value
 from tavern.util.exceptions import TestFailError
 from tavern.response.base import BaseResponse, indent_err_text
+from tavern.testutils import comparators
+
 
 logger = logging.getLogger(__name__)
+
+comparators_functions = inspect.getmembers(comparators, inspect.isfunction)
+validate_rule = {}
 
 
 class RestResponse(BaseResponse):
@@ -40,6 +46,7 @@ class RestResponse(BaseResponse):
         self.expected = deep_dict_merge(defaults, expected)
         self.response = None
         self.test_block_config = test_block_config
+        self.tavern_box = self.test_block_config["variables"]["tavern"]
         self.status_code = None
 
         def check_code(code):
@@ -129,6 +136,10 @@ class RestResponse(BaseResponse):
                 self._adderr("Status code was %s, expected %s",
                     status_code, expected_code)
 
+    def generate_validate_rule(self):
+        for (name, func) in comparators_functions:
+            validate_rule[name] = func
+
     def verify(self, response):
         """Verify response against expected values and returns any values that
         we wanted to save for use in future requests
@@ -152,6 +163,7 @@ class RestResponse(BaseResponse):
         self.response = response
         self.status_code = response.status_code
 
+
         try:
             body = response.json()
         except ValueError:
@@ -167,6 +179,21 @@ class RestResponse(BaseResponse):
                     self.validate_function.func,
                     indent_err_text(traceback.format_exc()),
                     e=e)
+
+        if not validate_rule:
+            self.generate_validate_rule()
+
+        # validate
+        if "validate" in self.expected:
+            validate = self.expected["validate"]
+            request = self.tavern_box.request_vars
+            assign_value(validate, request = request, response = body)
+            for i in validate:
+                for key, value in i.items():
+                    try:
+                        validate_rule[key](*value)
+                    except Exception as e:
+                        raise AssertionError("{} error, expected {} got {}".format(key, *value))
 
         # Get any keys to save
         saved = {}
@@ -198,7 +225,7 @@ class RestResponse(BaseResponse):
                     saved.update(to_save)
                 elif to_save is not None:
                     self._adderr("Unexpected return value '%s' from $ext save function")
-
+        
         self._validate_block("body", body)
         self._validate_block("headers", response.headers)
         self._validate_block("redirect_query_params", redirect_query_params)
