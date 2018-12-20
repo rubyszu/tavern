@@ -1,3 +1,7 @@
+# -*- coding: utf-8 -*-
+import sys 
+reload(sys)
+sys.setdefaultencoding('utf-8')
 import copy
 import io
 import itertools
@@ -25,7 +29,8 @@ from tavern.util.loader import IncludeLoader
 
 logger = logging.getLogger(__name__)
 
-match_tavern_file = re.compile(r'.+\.tavern\.ya?ml$').match
+# match_tavern_file = re.compile(r'.+\.tavern\.ya?ml$').match
+match_tavern_file = re.compile(r'^stage_.+\.ya?ml$').match
 
 
 def pytest_collect_file(parent, path):
@@ -35,7 +40,8 @@ def pytest_collect_file(parent, path):
     Todo:
         Change this to .tyaml or something?
     """
-    if path.basename.startswith("test") and match_tavern_file(path.strpath):
+    # if path.basename.startswith("test") and match_tavern_file(path.strpath):
+    if match_tavern_file(path.basename):
         return YamlFile(path, parent)
 
     return None
