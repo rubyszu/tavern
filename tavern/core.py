@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import logging
 import warnings
 import os
@@ -9,12 +10,13 @@ from contextlib2 import ExitStack
 from box import Box
 
 from .util import exceptions
-from .util.dict_util import format_keys
+from .util.dict_util import format_keys, mergeDict
 from .util.delay import delay
 from .util.retry import retry
 
 from .plugins import get_extra_sessions, get_request_type, get_verifiers, get_expected
 from .schemas.files import wrapfile
+import time
 
 
 logger = logging.getLogger(__name__)
@@ -30,7 +32,15 @@ def _resolve_test_stages(test_spec, available_stages):
                 if ref_id in available_stages:
                     # Make sure nothing downstream can change the globally
                     # defined stage. Just give the test a local copy.
+                    origin_stage = {}
+                    origin_list = ["request", "response"]
+                    for i in origin_list:
+                        if i in stage:
+                            origin_stage.update({i: stage[i]})
+
                     stage = deepcopy(available_stages[ref_id])
+                    stage.update(origin_stage)
+
                     logger.debug("found stage reference: %s", ref_id)
                 else:
                     logger.error("Bad stage: unknown stage referenced: %s", ref_id)
@@ -90,8 +100,10 @@ def run_test(in_file, test_spec, global_cfg):
             if "stages" in included:
                 for stage in included["stages"]:
                     if stage["id"] in available_stages:
-                        raise exceptions.DuplicateStageDefinitionError(
-                            "Stage with specified id already defined: {}".format(stage["id"]))
+                        continue
+                    # if stage["id"] in available_stages:
+                    #     raise exceptions.DuplicateStageDefinitionError(
+                    #         "Stage with specified id already defined: {}".format(stage["id"]))
                     available_stages[stage["id"]] = stage
 
     test_block_config["variables"]["tavern"] = tavern_box
@@ -173,11 +185,11 @@ def run_stage(sessions, stage, tavern_box, test_block_config):
 
     logger.info("Running stage : %s", name)
     response = r.run()
-
     verifiers = get_verifiers(stage, test_block_config, sessions, expected)
     for v in verifiers:
         saved = v.verify(response)
-        test_block_config["variables"].update(saved)
+        # test_block_config["variables"].update(saved)
+        mergeDict(test_block_config["variables"], saved)
 
     tavern_box.pop("request_vars")
     delay(stage, "after")

@@ -262,6 +262,7 @@ schema;stage_includes:
           required: false
           sequence:
             - include: stage
+            - include: stage_ref
 
 
 type: map
