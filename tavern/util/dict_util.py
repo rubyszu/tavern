@@ -8,10 +8,25 @@ from box import Box
 
 from tavern.util.loader import TypeConvertToken, ANYTHING, TypeSentinel
 from . import exceptions
+from tavern.schemas.extensions import get_wrapped_create_function
 
 
 logger = logging.getLogger(__name__)
 
+def mergeDict(target, expected):
+    '''Given two dict, recursively access the dicionary, merge to one dict
+    Args:
+        target(dict): the target dict
+        expected(dict): a dict wants to merge into target
+
+    '''
+    for key, value in expected.iteritems():
+        if isinstance(value, collections.Mapping):
+            replace_value = mergeDict(target.get(key, {}), value)
+            target[key] = replace_value
+        else:
+            target[key] = expected[key]
+    return target
 
 def resolve_value(key, to_check):
     """
