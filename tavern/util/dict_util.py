@@ -1,6 +1,9 @@
+# -*- coding: utf-8 -*-
 import collections
 import warnings
 import logging
+import re
+import copy
 from builtins import str as ustr
 
 from future.utils import raise_from
@@ -42,6 +45,68 @@ def resolve_value(key, to_check):
     split_key = key.split(".")
     return recurse_access_key(to_check, split_key)
 
+# def assign_value(expected, **to_check):
+#     """Save a value in the response for use in future tests
+
+#     Args:
+#         expected (dict or list): expected saved dict
+#         to_check (dict): An element of the response from which the given key
+#             is extracted
+        
+
+#     Returns:
+#         dict: dictionary of save_name: value, where save_name is the key we
+#             wanted to save this value as
+#     """
+#     if not to_check:
+#         return None;
+
+#     expected_type = type(expected)
+
+#     #dict
+#     if isinstance(expected, dict):
+#         saved = {}
+#         for save_as, joined_key in expected.items():
+#             #处理赋值的情况
+#             if isinstance(joined_key, str) and isformat(joined_key, **to_check):
+#                 split_key = joined_key.split(".")
+#                 saved[save_as] = recurse_access_key(to_check, split_key)
+#             #dict
+#             elif isinstance(joined_key, dict):
+#                 saved[save_as] = assign_value(joined_key, **to_check)
+
+#                 #处理注入函数的情况
+#                 if joined_key.has_key("$ext"):
+#                     ext = assign_value(joined_key["$ext"], **to_check)
+#                     saved[save_as] = get_wrapped_create_function(ext)
+
+#             #list in dict
+#             elif isinstance(joined_key, list):
+#                 saved[save_as] = assign_value(joined_key, **to_check)
+
+#             expected.update(saved) 
+            
+#     #list
+#     if isinstance(expected, list):
+#         for i in range(len(expected)):
+
+#             if isinstance(expected[i], str) and isformat(expected[i], **to_check):
+#                 split_key = expected[i].split(".")
+#                 expected[i] = recurse_access_key(to_check, split_key)
+
+#             elif isinstance(expected[i], dict):
+#                 expected[i] = assign_value(expected[i],**to_check)
+
+#                 #处理注入函数的情况
+#                 if expected[i].has_key("$ext"):
+#                     ext = assign_value(expected[i]["$ext"], **to_check)
+#                     expected[i] = get_wrapped_create_function(ext)
+
+
+#         return expected
+
+#     return expected
+
 def isformat(string, **to_check):
 
     flag = False
@@ -73,12 +138,13 @@ def assign_value(expected, **to_check):
     if isinstance(expected, dict):
         saved = {}
         for save_as, joined_key in expected.items():
-            #处理赋值的情况
             if isinstance(joined_key, str) and isformat(joined_key, **to_check):
                 split_key = joined_key.split(".")
                 saved[save_as] = recurse_access_key(to_check, split_key)
+
             #dict
             elif isinstance(joined_key, dict):
+
                 saved[save_as] = assign_value(joined_key, **to_check)
 
                 #处理注入函数的情况
@@ -95,7 +161,6 @@ def assign_value(expected, **to_check):
     #list
     if isinstance(expected, list):
         for i in range(len(expected)):
-
             if isinstance(expected[i], str) and isformat(expected[i], **to_check):
                 split_key = expected[i].split(".")
                 expected[i] = recurse_access_key(to_check, split_key)
@@ -108,11 +173,63 @@ def assign_value(expected, **to_check):
                     ext = assign_value(expected[i]["$ext"], **to_check)
                     expected[i] = get_wrapped_create_function(ext)
 
-
         return expected
 
     return expected
 
+
+def resolve_string(string, to_check):
+    format_rex = re.compile(r'\{([^\}]*)\}')
+    if not re.match(format_rex, string):
+        return string
+    formatted = re.findall(format_rex, string)
+    if len(formatted) == 1 and re.match(r'^\{([^\}]*)\}$', string):
+        split_key = formatted[0].split(".")
+        return recurse_access_key(to_check, split_key)
+    for i in formatted:
+        split_key = i.split(".")
+        param = recurse_access_key(to_check, split_key)
+        string = string.replace('{%s}' %i, param)
+
+    return string
+
+# def format_keys(val, variables):
+#     """recursively format a dictionary with the given values
+
+#     Args:
+#         val (dict): Input dictionary to format
+#         variables (dict): Dictionary of keys to format it with
+
+#     Returns:
+#         dict: recursively formatted dictionary
+#     """
+#     formatted = val
+#     box_vars = Box(variables)
+
+#     if isinstance(val, dict):
+#         formatted = {}
+#         #formatted = {key: format_keys(val[key], box_vars) for key in val}
+#         for key in val:
+#             formatted[key] = format_keys(val[key], box_vars)
+#     elif isinstance(val, (list, tuple)):
+#         formatted = [format_keys(item, box_vars) for item in val]
+        
+#     elif isinstance(val, (ustr, str)):
+#         try:
+#             # formatted = val.format(**box_vars)
+#             formatted = resolve_string(val, **box_vars)
+#         except KeyError as e:
+#             logger.error("Failed to resolve string [%s] with variables [%s]",
+#                          val, box_vars)
+#             logger.error("Key(s) not found in format: %s", e.args)
+#             raise_from(exceptions.MissingFormatError(e.args), e)
+#         except IndexError as e:
+#             logger.error("Empty format values are invalid")
+#             raise_from(exceptions.MissingFormatError(e.args), e)
+#     elif isinstance(val, TypeConvertToken):
+#         value = format_keys(val.value, box_vars)
+#         formatted = val.constructor(value)
+#     return formatted
 def format_keys(val, variables):
     """recursively format a dictionary with the given values
 
@@ -124,18 +241,25 @@ def format_keys(val, variables):
         dict: recursively formatted dictionary
     """
     formatted = val
-    box_vars = Box(variables)
+    box_vars = variables
 
     if isinstance(val, dict):
-        formatted = {}
-        #formatted = {key: format_keys(val[key], box_vars) for key in val}
-        for key in val:
-            formatted[key] = format_keys(val[key], box_vars)
+        # formatted = {}
+        formatted = {key: format_keys(val[key], box_vars) for key in val}
+        # for key in val:
+            # if key != "$ext":
+            #     formatted[key] = format_keys(val[key], box_vars)
+            # else:
+            #     pass
+                # ext = format_keys(key["$ext"], box_vars)
+                # formatted[key] = get_wrapped_create_function(ext)
     elif isinstance(val, (list, tuple)):
         formatted = [format_keys(item, box_vars) for item in val]
-    elif isinstance(val, (ustr, str)):
+        
+    elif isinstance(val, (str)):
         try:
-            formatted = val.format(**box_vars)
+            # formatted = val.format(**box_vars)
+            formatted = resolve_string(val, box_vars)
         except KeyError as e:
             logger.error("Failed to resolve string [%s] with variables [%s]",
                          val, box_vars)
@@ -147,9 +271,7 @@ def format_keys(val, variables):
     elif isinstance(val, TypeConvertToken):
         value = format_keys(val.value, box_vars)
         formatted = val.constructor(value)
-
     return formatted
-
 
 def recurse_access_key(current_val, keys):
     """ Given a list of keys and a dictionary, recursively access the dicionary
