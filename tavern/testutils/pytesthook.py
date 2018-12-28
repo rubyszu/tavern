@@ -26,11 +26,14 @@ from tavern.util import exceptions
 from tavern.util.dict_util import format_keys
 from tavern.util.general import load_global_config
 from tavern.util.loader import IncludeLoader
+from tavern.util.json_loader import load_all_json
 
 logger = logging.getLogger(__name__)
 
 # match_tavern_file = re.compile(r'.+\.tavern\.ya?ml$').match
-match_tavern_file = re.compile(r'^stage_.+\.ya?ml$').match
+# match_tavern_file = re.compile(r'^stage_.+\.ya?ml$').match
+
+match_tavern_file = re.compile(r'^stage_.+\.ya?ml$|^stage_.+\.json$').match
 
 
 def pytest_collect_file(parent, path):
@@ -117,6 +120,28 @@ def pytest_addoption(parser):
         default=False,
     )
 
+@pytest.mark.hookwrapper
+def pytest_runtest_makereport(item, call):
+    pytest_html = item.config.pluginmanager.getplugin('html')
+    outcome = yield
+    report = outcome.get_result()
+    extra = getattr(report, 'extra', [])
+    if report.when == 'call':
+        extra.append(pytest_html.extras.json(item.result,"summay"))
+        report.extra = extra
+        # response = item.results["response"]
+        # import pdb;pdb.set_trace()
+        # xfail = hasattr(report, 'wasxfail')
+        # only add additional html on failure
+        # pass
+        # if (report.skipped and xfail) or (report.failed and not xfail):
+        #     status_code = item.summary.response.status_code
+        #     request = item.summary.stage.stage.request
+        #     response = item.summary.response.json()
+        #     extra.append(pytest_html.extras.json(status_code, status_code))
+        #     extra.append(pytest_html.extras.json(request, "request"))
+        #     extra.append(pytest_html.extras.json(response, "response"))
+        #     report.extra = extra
 
 class YamlFile(pytest.File):
 
@@ -260,6 +285,9 @@ class YamlFile(pytest.File):
 
         yield item
 
+    def is_yaml_file(self,uri):
+        return re.search(r'\w+.yaml', uri) != None
+
     def collect(self):
         """Load each document in the given input file into a different test
 
@@ -269,7 +297,12 @@ class YamlFile(pytest.File):
 
         try:
             # Convert to a list so we can catch parser exceptions
-            all_tests = list(yaml.load_all(self.fspath.open(encoding="utf-8"), Loader=IncludeLoader))
+            basename = self.fspath.basename
+            if self.is_yaml_file(basename):
+                all_tests = list(yaml.load_all(self.fspath.open(encoding="utf-8"), Loader=IncludeLoader))
+            else:
+                # import pdb;pdb;pdb.set_trace()
+                all_tests = list(load_all_json(self.fspath.strpath))
         except yaml.parser.ParserError as e:
             raise_from(exceptions.BadSchemaError, e)
 
@@ -306,6 +339,7 @@ class YamlItem(pytest.Item):
         self.spec = spec
 
         self.global_cfg = {}
+        self.result = {}
 
     def initialise_fixture_attrs(self):
         # pylint: disable=protected-access,attribute-defined-outside-init
@@ -452,7 +486,7 @@ class YamlItem(pytest.Item):
             fixture_values = self._load_fixture_values()
             self.global_cfg["variables"].update(fixture_values)
 
-            run_test(self.path, self.spec, self.global_cfg)
+            run_test(self.path, self.spec, self.global_cfg, self.result)
         except exceptions.BadSchemaError:
             if xfail == "verify":
                 logger.info("xfailing test while verifying schema")
@@ -476,7 +510,7 @@ class YamlItem(pytest.Item):
             modifying so that it shows the yaml and all the reasons the test
             failed rather than a traceback
         """
-
+        self.summary = excinfo._excinfo[1]
         if self.config.getini("tavern-beta-new-traceback") or self.config.getoption("tavern_beta_new_traceback"):
             if issubclass(excinfo.type, exceptions.TavernException):
                 return ReprdError(excinfo, self)
