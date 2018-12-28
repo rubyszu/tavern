@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import json
 import traceback
 import logging
@@ -42,7 +43,6 @@ class RestResponse(BaseResponse):
             self.validate_function = get_wrapped_response_function(body["$ext"])
         else:
             self.validate_function = None
-
         self.expected = deep_dict_merge(defaults, expected)
         self.response = None
         self.test_block_config = test_block_config
@@ -162,10 +162,10 @@ class RestResponse(BaseResponse):
 
         self.response = response
         self.status_code = response.status_code
-
+        request = self.tavern_box.request_vars
 
         try:
-            body = response.json()
+            body = dict(response.json())
         except ValueError:
             body = None
 
@@ -179,15 +179,13 @@ class RestResponse(BaseResponse):
                     self.validate_function.func,
                     indent_err_text(traceback.format_exc()),
                     e=e)
-
         if not validate_rule:
             self.generate_validate_rule()
-
         # validate
         if "validate" in self.expected:
             validate = self.expected["validate"]
-            request = self.tavern_box.request_vars
-            assign_value(validate, request = request, response = body)
+            assign_value(expected = validate, request = request, response = body, context = self.test_block_config["variables"])
+
             for i in validate:
                 for key, value in i.items():
                     try:
@@ -199,7 +197,7 @@ class RestResponse(BaseResponse):
         saved = {}
 
         redirect_query_params = self._get_redirect_query_params(response)
-
+        saved.update(self._save_value("request", request))
         saved.update(self._save_value("body", body))
         saved.update(self._save_value("headers", response.headers))
         saved.update(self._save_value("redirect_query_params", redirect_query_params))
@@ -225,14 +223,12 @@ class RestResponse(BaseResponse):
                     saved.update(to_save)
                 elif to_save is not None:
                     self._adderr("Unexpected return value '%s' from $ext save function")
-        
         self._validate_block("body", body)
         self._validate_block("headers", response.headers)
         self._validate_block("redirect_query_params", redirect_query_params)
 
         if self.errors:
             raise TestFailError("Test '{:s}' failed:\n{:s}".format(self.name, self._str_errors()), failures=self.errors)
-
         return saved
 
     def _validate_block(self, blockname, block):
@@ -312,5 +308,4 @@ class RestResponse(BaseResponse):
 
         if saved:
             logger.debug("Saved %s for '%s' from response", saved, key)
-
         return saved
