@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import json
 import mimetypes
 import logging
@@ -15,7 +16,7 @@ import requests
 from box import Box
 
 from tavern.util import exceptions
-from tavern.util.dict_util import format_keys, check_expected_keys
+from tavern.util.dict_util import format_keys, check_expected_keys, assign_value
 from tavern.schemas.extensions import get_wrapped_create_function
 
 from tavern.request.base import BaseRequest
@@ -94,6 +95,7 @@ def get_request_args(rspec, test_block_config):
             rspec["headers"]["content-type"] = "application/json"
 
     fspec = format_keys(rspec, test_block_config["variables"])
+    fspec = assign_value(fspec, variables = test_block_config["variables"])
 
     def add_request_args(keys, optional):
         for key in keys:
@@ -149,7 +151,6 @@ def get_request_args(rspec, test_block_config):
     if request_args["method"] in ["GET", "HEAD", "OPTIONS"]:
         if any(i in request_args for i in ["json", "data"]):
             warnings.warn("You are trying to send a body with a HTTP verb that has no semantic use for it", RuntimeWarning)
-
     return request_args
 
 
