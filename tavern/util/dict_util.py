@@ -40,7 +40,7 @@ def resolve_value(key, to_check):
     Return value   "b"
     """
     if not to_check or "." not in key:
-        return key
+        return to_check[key]
 
     split_key = key.split(".")
     return recurse_access_key(to_check, split_key)
@@ -244,15 +244,8 @@ def format_keys(val, variables):
     box_vars = variables
 
     if isinstance(val, dict):
-        # formatted = {}
         formatted = {key: format_keys(val[key], box_vars) for key in val}
-        # for key in val:
-            # if key != "$ext":
-            #     formatted[key] = format_keys(val[key], box_vars)
-            # else:
-            #     pass
-                # ext = format_keys(key["$ext"], box_vars)
-                # formatted[key] = get_wrapped_create_function(ext)
+                
     elif isinstance(val, (list, tuple)):
         formatted = [format_keys(item, box_vars) for item in val]
         
