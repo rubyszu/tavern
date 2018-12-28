@@ -13,6 +13,7 @@ from .util import exceptions
 from .util.dict_util import format_keys, mergeDict
 from .util.delay import delay
 from .util.retry import retry
+from .util.repeat import repeat
 
 from .plugins import get_extra_sessions, get_request_type, get_verifiers, get_expected
 from .schemas.files import wrapfile
@@ -54,7 +55,7 @@ def _resolve_test_stages(test_spec, available_stages):
 
     return test_stages
 
-def run_test(in_file, test_spec, global_cfg):
+def run_test(in_file, test_spec, global_cfg, summary):
     """Run a single tavern test
 
     Note that each tavern test can consist of multiple requests (log in,
@@ -151,9 +152,11 @@ def run_test(in_file, test_spec, global_cfg):
 
             # Wrap run_stage with retry helper
             run_stage_with_retries = retry(stage)(run_stage)
+            # repeat run_stage
+            run_stage_with_times = repeat(stage)(run_stage_with_retries)
 
             try:
-                run_stage_with_retries(sessions, stage, tavern_box, test_block_config)
+                run_stage_with_times(sessions, stage, tavern_box, test_block_config, summary)
             except exceptions.TavernException as e:
                 e.stage = stage
                 e.test_block_config = test_block_config
@@ -163,7 +166,7 @@ def run_test(in_file, test_spec, global_cfg):
                 break
 
 
-def run_stage(sessions, stage, tavern_box, test_block_config):
+def run_stage(sessions, stage, tavern_box, test_block_config, result):
     """Run one stage from the test
 
     Args:
@@ -185,6 +188,13 @@ def run_stage(sessions, stage, tavern_box, test_block_config):
 
     logger.info("Running stage : %s", name)
     response = r.run()
+    result.update({
+        stage["id"]:{
+            "request": tavern_box.request_vars,
+            "response": response.json(),
+            "status_code": response.status_code
+        }
+    })
     verifiers = get_verifiers(stage, test_block_config, sessions, expected)
     for v in verifiers:
         saved = v.verify(response)
@@ -193,6 +203,7 @@ def run_stage(sessions, stage, tavern_box, test_block_config):
 
     tavern_box.pop("request_vars")
     delay(stage, "after")
+
 
 
 def _run_pytest(in_file, tavern_global_cfg, tavern_mqtt_backend=None, tavern_http_backend=None, tavern_strict=None, pytest_args=None, **kwargs): # pylint: disable=too-many-arguments
